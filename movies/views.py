@@ -6,6 +6,11 @@ from .models import Film, Actor
 from .utils import normalize
 
 
+SEARCH_PAGINATION_SIZE = 25
+API_LIMIT = 50
+FIRST_PAGE = 1
+
+
 def search_view(request):
     """
     Screen 1: Search for films and actors
@@ -25,8 +30,8 @@ def search_view(request):
             name_normalized__icontains=normalized_query
         ).order_by('name')
 
-        film_paginator = Paginator(films, 25)
-        actor_paginator = Paginator(actors, 25)
+        film_paginator = Paginator(films, SEARCH_PAGINATION_SIZE)
+        actor_paginator = Paginator(actors, SEARCH_PAGINATION_SIZE)
 
         film_page_number = request.GET.get('film_page')
         actor_page_number = request.GET.get('actor_page')
@@ -34,14 +39,14 @@ def search_view(request):
         try:
             films_page = film_paginator.get_page(film_page_number)
         except PageNotAnInteger:
-            films_page = film_paginator.page(1)
+            films_page = film_paginator.page(FIRST_PAGE)
         except EmptyPage:
             films_page = film_paginator.page(film_paginator.num_pages)
 
         try:
             actors_page = actor_paginator.get_page(actor_page_number)
         except PageNotAnInteger:
-            actors_page = actor_paginator.page(1)
+            actors_page = actor_paginator.page(FIRST_PAGE)
         except EmptyPage:
             actors_page = actor_paginator.page(actor_paginator.num_pages)
 
@@ -104,7 +109,6 @@ def search_api_view(request):
         return JsonResponse({'films': [], 'actors': []})
     
     normalized_query = normalize(query)
-    API_LIMIT = 50
 
     films = Film.objects.filter(
         title_normalized__icontains=normalized_query
@@ -117,5 +121,5 @@ def search_api_view(request):
     return JsonResponse({
         'films': list(films),
         'actors': list(actors),
-        'limit_reached':len(films) == API_LIMIT or len(actors) == API_LIMIT,
+        'limit_reached': len(films) == API_LIMIT or len(actors) == API_LIMIT,
     })
