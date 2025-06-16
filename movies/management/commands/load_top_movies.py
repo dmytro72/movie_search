@@ -13,6 +13,21 @@ from movies.models import Actor, Film, FilmActor
 class Command(BaseCommand):
     help = "Loads the Top 300 movies from csfd.cz along with their actors."
 
+    DEFAULT_MOVIE_LIMIT = 300
+    MOVIES_PER_CSFD_PAGE = 100
+    MIN_REQUEST_DELAY = 1  # секунды
+    MAX_REQUEST_DELAY = 3  # секунды
+    
+    CSFD_BASE_URL = "https://www.csfd.cz"
+    CSFD_TOP_MOVIES_URL = "https://www.csfd.cz/zebricky/filmy/nejlepsi/"
+    
+    MOVIE_SELECTOR = "header.article-header h3.film-title-norating a.film-title-name"
+    ACTOR_URL_PATTERN = r'/tvurce/\d+'
+    CAST_HEADER_PATTERN = r'Hrají:'
+    
+    USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
+    ACCEPT_LANGUAGE = "cs,en;q=0.9"
+
     def add_arguments(self, parser):
         """
         Adds command-line arguments to the parser.
@@ -33,8 +48,8 @@ class Command(BaseCommand):
         parser.add_argument(
             "--limit",
             type=positive_int,
-            default=300,
-            help="Number of movies to load (default: 300)",
+            default=self.DEFAULT_MOVIE_LIMIT,
+            help=f"Number of movies to load (default: {self.DEFAULT_MOVIE_LIMIT})",
         )
 
     def handle(self, *args, **options) -> None:
@@ -72,7 +87,7 @@ class Command(BaseCommand):
                 )
             
             # pause between requests
-            time.sleep(random.uniform(1, 3))
+            time.sleep(random.uniform(self.MIN_REQUEST_DELAY, self.MAX_REQUEST_DELAY))
     
     def get_session(self) -> requests.Session:
         """
@@ -84,8 +99,8 @@ class Command(BaseCommand):
         session = requests.Session()
         session.headers.update(
             {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3",
-                "Accept-Language": "cs,en;q=0.9"
+                "User-Agent": self.USER_AGENT,
+                "Accept-Language": self.ACCEPT_LANGUAGE
             }
         )
         return session
@@ -127,7 +142,6 @@ class Command(BaseCommand):
             List[Dict[str, str]]: A list of movie dictionaries with title and URL.
         """
         session = self.get_session()
-        base_url = "https://www.csfd.cz/zebricky/filmy/nejlepsi/"
         films = []
         processed = 0
         from_param = 0
@@ -135,9 +149,9 @@ class Command(BaseCommand):
         while processed < limit:
             # Construct the URL with the 'from' parameter for pagination
             if from_param > 0:
-                url = f"{base_url}?from={from_param}"
+                url = f"{self.CSFD_TOP_MOVIES_URL}?from={from_param}"
             else:
-                url = base_url
+                url = self.CSFD_TOP_MOVIES_URL
                 
             self.stdout.write(f"Fetching movies from: {url}")
             
@@ -151,7 +165,7 @@ class Command(BaseCommand):
             soup = BeautifulSoup(response.content, "html.parser")
             
             # Find movies based on the HTML structure
-            movie_elements = soup.select("header.article-header h3.film-title-norating a.film-title-name")
+            movie_elements = soup.select(self.MOVIE_SELECTOR)
             
             if not movie_elements:
                 self.stdout.write(self.style.WARNING(f"No movies found on page: {url}"))
@@ -165,18 +179,18 @@ class Command(BaseCommand):
                 href = element.get("href")
                 
                 if title and href:
-                    url = "https://www.csfd.cz" + href
+                    url = self.CSFD_BASE_URL + href
                     films.append({"title": title, "url": url})
                     processed += 1
             
-            # Move to the next page (100 movies per page)
-            from_param += 100
+            # Move to the next page
+            from_param += self.MOVIES_PER_CSFD_PAGE
                 
         return films[:limit]
     
     def parse_film(self, film_link: str) -> List[Dict[str, str]]:
         """
-        Fetches actor  data from a given movie URL.
+        Fetches actor data from a given movie URL.
 
         HTML structure to parse:
         <div>
@@ -206,7 +220,7 @@ class Command(BaseCommand):
         actors = []
 
         # Find the section with the header "Hrají:" (meaning "Starring:")
-        cast_section = soup.find('h4', string=re.compile(r'Hrají:', re.IGNORECASE))
+        cast_section = soup.find('h4', string=re.compile(self.CAST_HEADER_PATTERN, re.IGNORECASE))
 
         if not cast_section:
             return actors
@@ -219,7 +233,7 @@ class Command(BaseCommand):
 
         # Find all actor links within this div
         # Includes both visible and hidden actors (e.g., in spans with class "more-member-1 hidden")
-        actor_links = cast_div.find_all('a', href=re.compile(r'/tvurce/\d+'))
+        actor_links = cast_div.find_all('a', href=re.compile(self.ACTOR_URL_PATTERN))
 
         for link in actor_links:
             # Extract actor URL and name
@@ -230,7 +244,7 @@ class Command(BaseCommand):
             if actor_url and actor_name:
                 # Construct full URL if relative
                 if actor_url.startswith('/'):
-                    actor_url = "https://www.csfd.cz" + actor_url
+                    actor_url = self.CSFD_BASE_URL + actor_url
 
                 actors.append({
                     'name': actor_name,
