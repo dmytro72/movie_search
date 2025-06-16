@@ -1,0 +1,27 @@
+{% extends 'movies/base.html' %}
+
+{% block title %}{{ actor.name }} - Top 300 Filmů{% endblock %}
+
+{% block content %}
+<a href="{% url 'movies:search' %}" class="back-link">← Zpět na vyhledávání</a>
+
+<div class="detail-header">
+    <h1 class="detail-title">{{ actor.name }}</h1>
+    {% if actor.url %}
+        <p><a href="{{ actor.url }}" target="_blank" rel="noopener">Odkaz na původní zdroj</a></p>
+    {% endif %}
+</div>
+
+<div class="result-column">
+    <h3>Filmy z Top 300 ({{ films.count }})</h3>
+    {% if films %}
+        {% for film in films %}
+            <div class="list-item">
+                <a href="{% url 'movies:film_detail' film.id %}">{{ film.title }}</a>
+            </div>
+        {% endfor %}
+    {% else %}
+        <div class="no-results">Žádné filmy z Top 300 v databázi</div>
+    {% endif %}
+</div>
+{% endblock %}
