@@ -59,7 +59,10 @@ def film_detail_view(request, film_id):
     """
     Screen 2: Film details
     """
-    film = get_object_or_404(Film, id=film_id)
+    film = get_object_or_404(
+        Film.objects.prefetch_related('actors'),
+        id=film_id
+    )
     actors = film.actors.all().order_by('name')
 
     context = {
@@ -74,7 +77,10 @@ def actor_detail_view(request, actor_id):
     """
     Screen 2: Actor details
     """
-    actor = get_object_or_404(Actor, id=actor_id)
+    actor = get_object_or_404(
+        Actor.objects.prefetch_related('films'),
+        id=actor_id
+    )
     films = actor.films.all().order_by('title')
 
     print(f"Films for actor {actor.name}: {films}")
@@ -98,16 +104,18 @@ def search_api_view(request):
         return JsonResponse({'films': [], 'actors': []})
     
     normalized_query = normalize(query)
+    API_LIMIT = 50
 
     films = Film.objects.filter(
         title_normalized__icontains=normalized_query
-    ).values('id', 'title')[:50]
+    ).values('id', 'title')[:API_LIMIT]
 
     actors = Actor.objects.filter(
         name_normalized__icontains=normalized_query
-    ).values('id', 'name')[:50]
+    ).values('id', 'name')[:API_LIMIT]
     
     return JsonResponse({
         'films': list(films),
         'actors': list(actors),
+        'limit_reached':len(films) == API_LIMIT or len(actors) == API_LIMIT,
     })
