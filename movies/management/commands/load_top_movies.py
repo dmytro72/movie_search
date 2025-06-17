@@ -15,8 +15,8 @@ class Command(BaseCommand):
 
     DEFAULT_MOVIE_LIMIT = 300
     MOVIES_PER_CSFD_PAGE = 100
-    MIN_REQUEST_DELAY = 1  # секунды
-    MAX_REQUEST_DELAY = 3  # секунды
+    MIN_REQUEST_DELAY = 1  # in seconds
+    MAX_REQUEST_DELAY = 3  # in seconds
     
     CSFD_BASE_URL = "https://www.csfd.cz"
     CSFD_TOP_MOVIES_URL = "https://www.csfd.cz/zebricky/filmy/nejlepsi/"
