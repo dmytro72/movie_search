@@ -153,7 +153,9 @@ def actor_detail_view(request, actor_id):
     else:
         logger.info(f"Fetching actor from db: {actor_id}")
         actor = get_object_or_404(
-            Actor.objects.prefetch_related('films'),
+            Actor.objects.prefetch_related(
+                Prefetch('films', queryset=Film.objects.order_by('title'), to_attr='films_sorted')
+            ),
             id=actor_id
         )
         logger.debug(f"Found actor: '{actor.name}' (ID: {actor_id})")
@@ -162,9 +164,7 @@ def actor_detail_view(request, actor_id):
             'name': actor.name,
             'url': actor.url,
         }
-    
-        films_qs = actor.films.all().order_by('title').values('id', 'title')
-        films_data = list(films_qs)
+        films_data = [{'id': film.id, 'title': film.title} for film in actor.films_sorted]
 
         cache.set(cache_key, {'actor': actor_data, 'films': films_data}, timeout=60*60*24) # 24 hours
 
