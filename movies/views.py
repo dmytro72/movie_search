@@ -1,6 +1,6 @@
 import logging
 from django.shortcuts import render, get_object_or_404
-from django.db.models import Q
+from django.db.models import Prefetch
 from django.http import JsonResponse
 from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
 from django.core.cache import cache
@@ -100,20 +100,37 @@ def film_detail_view(request, film_id):
     """
     logger.info(f"Film detail request for film_id: {film_id}")
 
-    film = get_object_or_404(
-        Film.objects.prefetch_related('actors'),
-        id=film_id
-    )
-    
-    logger.debug(f"Found film: '{film.title}' (ID: {film_id})")
+    cache_key = f"film_{film_id}"
+    cached_data = cache.get(cache_key)
 
-    actors = film.actors.all().order_by('name')
-    actors_count = actors.count()
-    logger.debug(f"Film '{film.title}' has {actors_count} actors")
+    if cached_data:
+        logger.info(f"Found cached film: {film_id}")
+        film_data = cached_data['film']
+        actors_data = cached_data['actors']
+    else:
+        logger.info(f"Fetching film from database: {film_id}")
+        film = get_object_or_404(
+            Film.objects.prefetch_related(
+                Prefetch('actors', queryset=Actor.objects.order_by('name'), to_attr='actors_sorted')
+                ),
+            id=film_id
+        )    
+        logger.debug(f"Found film: '{film.title}' (ID: {film_id})")
+
+        film_data = {
+            'title': film.title,
+            'url': film.url,
+        }
+        actors_data = [{'id': actor.id, 'name': actor.name} for actor in film.actors_sorted]
+
+        cache.set(cache_key, {'film': film_data, 'actors': actors_data}, timeout=60*60*24) # 24 hours
+
+    actors_count = len(actors_data)
+    logger.debug(f"Film '{film_data['title']}' has {actors_count} actors")
 
     context = {
-        'film': film,
-        'actors': actors,
+        'film': film_data,
+        'actors': actors_data,
     }
 
     logger.info("Film detail rendered successfully")
@@ -126,19 +143,37 @@ def actor_detail_view(request, actor_id):
     """
     logger.info(f"Actor detail request for actor_id: {actor_id}")
 
-    actor = get_object_or_404(
-        Actor.objects.prefetch_related('films'),
-        id=actor_id
-    )
-    logger.debug(f"Found actor: '{actor.name}' (ID: {actor_id})")
+    cache_key = f"actor_{actor_id}"
+    cached_data = cache.get(cache_key)
     
-    films = actor.films.all().order_by('title')
-    films_count = films.count()
-    logger.debug(f"Actor '{actor.name}' has {films_count} films")
+    if cached_data:
+        logger.info(f"Found cached data for actor: {actor_id}")
+        actor_data = cached_data['actor']
+        films_data = cached_data['films']
+    else:
+        logger.info(f"Fetching actor from db: {actor_id}")
+        actor = get_object_or_404(
+            Actor.objects.prefetch_related('films'),
+            id=actor_id
+        )
+        logger.debug(f"Found actor: '{actor.name}' (ID: {actor_id})")
+
+        actor_data = {
+            'name': actor.name,
+            'url': actor.url,
+        }
+    
+        films_qs = actor.films.all().order_by('title').values('id', 'title')
+        films_data = list(films_qs)
+
+        cache.set(cache_key, {'actor': actor_data, 'films': films_data}, timeout=60*60*24) # 24 hours
+
+    films_count = len(films_data)
+    logger.debug(f"Actor '{actor_data['name']}' played in {films_count} films")
 
     context = {
-        'actor': actor,
-        'films': films,
+        'actor': actor_data,
+        'films': films_data,
     }
 
     logger.info("Actor detail rendered successfully")

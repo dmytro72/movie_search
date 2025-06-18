@@ -13,7 +13,7 @@
 </div>
 
 <div class="result-column">
-    <h3>Herci ve filmu ({{ actors.count }})</h3>
+    <h3>Herci ve filmu ({{ actors|length }})</h3>
     {% if actors %}
         {% for actor in actors %}
             <div class="list-item">

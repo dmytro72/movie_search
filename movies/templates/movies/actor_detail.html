@@ -13,7 +13,7 @@
 </div>
 
 <div class="result-column">
-    <h3>Filmy z Top 300 ({{ films.count }})</h3>
+    <h3>Filmy z Top 300 ({{ films|length }})</h3>
     {% if films %}
         {% for film in films %}
             <div class="list-item">
