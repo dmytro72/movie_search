@@ -156,12 +156,6 @@ LOGGING = {
             'formatter': 'verbose',
             'level': 'ERROR',
         },
-        'scraper_file': {
-            'class': 'logging.FileHandler',
-            'filename': BASE_DIR / 'logs' / 'scraper.log',
-            'formatter': 'verbose',
-            'level': 'DEBUG',
-        },
     },
     'loggers': {
         'django': {
@@ -171,11 +165,6 @@ LOGGING = {
         },
         'movies': {
             'handlers': ['console', 'file'],
-            'level': 'DEBUG',
-            'propagate': False,
-        },
-        'movies.scraper': {
-            'handlers': ['console', 'scraper_file'],
             'level': 'DEBUG',
             'propagate': False,
         },
