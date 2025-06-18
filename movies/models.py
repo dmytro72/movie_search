@@ -1,5 +1,9 @@
+import logging
 from django.db import models
 from movies.utils import normalize
+
+
+logger = logging.getLogger('movies.models')
 
 class Actor(models.Model):
     name = models.CharField(max_length=255)
@@ -8,6 +12,7 @@ class Actor(models.Model):
 
     def save(self, *args, **kwargs):
         self.name_normalized = normalize(self.name)
+        logger.info(f"Saving actor: {self.name}")
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -22,6 +27,7 @@ class Film(models.Model):
 
     def save(self, *args, **kwargs):
         self.title_normalized = normalize(self.title)
+        logger.info(f"Saving film: {self.title}")
         super().save(*args, **kwargs)
 
     def __str__(self):
