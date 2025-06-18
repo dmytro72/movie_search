@@ -188,3 +188,15 @@ LOGGING = {
 # Ensure logs directory exists
 LOGS_DIR = BASE_DIR / 'logs'
 os.makedirs(LOGS_DIR, exist_ok=True)
+
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
+        'LOCATION': BASE_DIR / 'django_cache',
+        'TIMEOUT': 86400,
+    }
+}
+
+# Ensure django_cache directory exists
+CACHE_DIR = BASE_DIR / 'django_cache'
+os.makedirs(CACHE_DIR, exist_ok=True)

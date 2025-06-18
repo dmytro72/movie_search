@@ -3,6 +3,7 @@ from django.shortcuts import render, get_object_or_404
 from django.db.models import Q
 from django.http import JsonResponse
 from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
+from django.core.cache import cache
 from .models import Film, Actor
 from .utils import normalize
 
@@ -29,15 +30,30 @@ def search_view(request):
         normalized_query = normalize(query)
         logger.debug(f"Normalized query: '{normalized_query}'")
 
-        films = Film.objects.filter(
-            title_normalized__icontains=normalized_query
-        ).order_by('title')
-        actors = Actor.objects.filter(
-            name_normalized__icontains=normalized_query
-        ).order_by('name')
+        cache_key = f"search_{normalized_query}"
+        cached_data = cache.get(cache_key)
 
-        films_count = films.count()
-        actors_count = actors.count()
+        if cached_data:
+            logger.info(f"Found cached data in cache with key: '{cache_key}'")
+            films = cached_data['films']
+            actors = cached_data['actors']
+        else:
+            logger.info("No cached data found in cache. Fetching data from DB...")
+            films_qs = Film.objects.filter(
+                title_normalized__icontains=normalized_query
+            ).order_by('title').values('id','title', 'url')
+
+            actors_qs = Actor.objects.filter(
+                name_normalized__icontains=normalized_query
+            ).order_by('name').values('id', 'name', 'url')
+
+            films = list(films_qs)
+            actors = list(actors_qs)
+
+            cache.set(cache_key, {'films':films, 'actors':actors}, timeout=60*60*24) # 24 hours
+
+        films_count = len(films)
+        actors_count = len(actors)
         logger.info(f"Found {films_count} films and {actors_count} actors for query '{query}'")
 
         film_paginator = Paginator(films, SEARCH_PAGINATION_SIZE)
@@ -70,8 +86,8 @@ def search_view(request):
         'query': query,
         'films': films_page,
         'actors': actors_page,
-        'films_count': films.count() if films else 0,
-        'actors_count': actors.count() if actors else 0,
+        'films_count': len(films) if films else 0,
+        'actors_count': len(actors) if actors else 0,
     }
 
     logger.info("Search results rendered successfully")
