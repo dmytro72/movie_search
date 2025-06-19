@@ -177,6 +177,11 @@ LOGGING = {
             'handlers': ['console', 'file'],
             'level': 'DEBUG',
             'propagate': False,
+        },        
+        'movies.utils': {
+            'handlers': ['console', 'file'],
+            'level': 'DEBUG',
+            'propagate': False,
         },
         'root': {
             'handlers': ['console', 'error_file'],

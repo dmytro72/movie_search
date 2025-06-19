@@ -59,11 +59,11 @@ def test_search_cache_miss_and_hit(client, test_data):
     query = 'forrest'
     
     # First request - should be cache miss
-    with patch('movies.views.logger') as mock_logger:
+    with patch('movies.utils.logger') as mock_logger:
         response1 = client.get(reverse('movies:search'), {'q': query})
         
         # Verify cache miss was logged
-        mock_logger.info.assert_any_call("No cached data found in cache. Fetching data from DB...")
+        mock_logger.info.assert_any_call("No cached data found. Fetching from DB...")
     
     assert response1.status_code == 200
     assert 'Forrest Gump' in response1.content.decode()
@@ -76,11 +76,11 @@ def test_search_cache_miss_and_hit(client, test_data):
     assert 'actors' in cached_data
     
     # Second request - should be cache hit
-    with patch('movies.views.logger') as mock_logger:
+    with patch('movies.utils.logger') as mock_logger:
         response2 = client.get(reverse('movies:search'), {'q': query})
         
         # Verify cache hit was logged
-        mock_logger.info.assert_any_call(f"Found cached data in cache with key: '{cache_key}'")
+        mock_logger.info.assert_any_call(f"Found cached data for key: '{cache_key}")
     
     assert response2.status_code == 200
     assert 'Forrest Gump' in response2.content.decode()
