@@ -3,6 +3,8 @@ import re
 from unidecode import unidecode
 from django.core.cache import cache
 from django.core.paginator import Paginator, PageNotAnInteger, EmptyPage
+from django.db.models import Prefetch
+from django.shortcuts import get_object_or_404
 
 logger = logging.getLogger('movies.utils')
 
@@ -86,3 +88,62 @@ def paginate_results(request, items, param_name, label):
         page = paginator.page(paginator.num_pages)
         logger.warning(f"{label} page '{page_number}' is empty, using last page")
     return page
+
+
+def get_cached_or_query_object(cache_key, logger_prefix, fetch_func):
+    """
+    Retrieve data from cach if available; otherwise, fetch it using provided function.
+    """
+    logger.info(f"{logger_prefix} checking cache for key: {cache_key}")
+    cached = cache.get(cache_key)
+
+    if cached:
+        logger.info(f"{logger_prefix} found in cache.")
+        return cached
+    
+    logger.info(f"{logger_prefix} not found in cache. Fetching from DB...")
+    data = fetch_func()
+    cache.set(cache_key, data, timeout=CACHE_TIMEOUT)
+    return data
+
+
+def fetch_film_data(film_id):    
+    from .models import Film, Actor
+    film = get_object_or_404(
+        Film.objects.prefetch_related(
+            Prefetch('actors', queryset=Actor.objects.order_by('name'), to_attr='actors_sorted')
+        ),
+        id= film_id
+    )
+    logger.debug(f"Fetched film '{film.title}' (ID: {film_id})")
+    return {
+        'film': {
+            'title':film.title,
+            'url': film.url,
+        },
+        'actors': [{
+            'id': actor.id,
+            'name': actor.name
+        } for actor in film.actors_sorted]
+    }
+
+
+def fetch_actor_data(actor_id):    
+    from .models import Film, Actor
+    actor = get_object_or_404(
+        Actor.objects.prefetch_related(
+            Prefetch('films', queryset=Film.objects.order_by('title'), to_attr='films_sorted')
+        ),
+        id = actor_id
+    )
+    logger.debug(f"Fetched actor '{actor.name}' (ID: {actor_id})")
+    return {
+        'actor': {
+            'name': actor.name,
+            'url': actor.url,
+        },
+        'films': [{
+            'id': film.id,
+            'title': film.title,
+        } for film in actor.films_sorted]
+    }

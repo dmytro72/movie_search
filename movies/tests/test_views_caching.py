@@ -146,14 +146,15 @@ def test_search_cache_timeout(client, test_data):
 @pytest.mark.django_db
 def test_film_detail_cache_miss_and_hit(client, test_data):
     """Test film detail cache miss on first request and hit on second"""
-    film_id = test_data['film1'].id
+    film_id = test_data['film1'].id    
+    logger_prefix=f"Film {film_id}"
     
     # First request - should be cache miss
-    with patch('movies.views.logger') as mock_logger:
+    with patch('movies.utils.logger') as mock_logger:
         response1 = client.get(reverse('movies:film_detail', args=[film_id]))
         
         # Verify cache miss was logged
-        mock_logger.info.assert_any_call(f"Fetching film from database: {film_id}")
+        mock_logger.info.assert_any_call(f"{logger_prefix} not found in cache. Fetching from DB...")
     
     assert response1.status_code == 200
     assert 'Forrest Gump' in response1.content.decode()
@@ -166,11 +167,11 @@ def test_film_detail_cache_miss_and_hit(client, test_data):
     assert 'actors' in cached_data
     
     # Second request - should be cache hit
-    with patch('movies.views.logger') as mock_logger:
+    with patch('movies.utils.logger') as mock_logger:
         response2 = client.get(reverse('movies:film_detail', args=[film_id]))
         
         # Verify cache hit was logged
-        mock_logger.info.assert_any_call(f"Found cached film: {film_id}")
+        mock_logger.info.assert_any_call(f"{logger_prefix} found in cache.")
     
     assert response2.status_code == 200
     assert 'Forrest Gump' in response2.content.decode()
@@ -226,13 +227,14 @@ def test_film_detail_cache_timeout(client, test_data):
 def test_actor_detail_cache_miss_and_hit(client, test_data):
     """Test actor detail cache miss on first request and hit on second"""
     actor_id = test_data['actor1'].id
+    logger_prefix = f"Actor {actor_id}"
     
     # First request - should be cache miss
-    with patch('movies.views.logger') as mock_logger:
+    with patch('movies.utils.logger') as mock_logger:
         response1 = client.get(reverse('movies:actor_detail', args=[actor_id]))
         
         # Verify cache miss was logged
-        mock_logger.info.assert_any_call(f"Fetching actor from db: {actor_id}")
+        mock_logger.info.assert_any_call(f"{logger_prefix} not found in cache. Fetching from DB...")
     
     assert response1.status_code == 200
     assert 'Tom Hanks' in response1.content.decode()
@@ -245,11 +247,11 @@ def test_actor_detail_cache_miss_and_hit(client, test_data):
     assert 'films' in cached_data
     
     # Second request - should be cache hit
-    with patch('movies.views.logger') as mock_logger:
+    with patch('movies.utils.logger') as mock_logger:
         response2 = client.get(reverse('movies:actor_detail', args=[actor_id]))
         
         # Verify cache hit was logged
-        mock_logger.info.assert_any_call(f"Found cached data for actor: {actor_id}")
+        mock_logger.info.assert_any_call(f"{logger_prefix} found in cache.")
     
     assert response2.status_code == 200
     assert 'Tom Hanks' in response2.content.decode()
