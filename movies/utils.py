@@ -109,6 +109,15 @@ def get_cached_or_query_object(cache_key, logger_prefix, fetch_func):
 
 
 def fetch_film_data(film_id):    
+    """
+    Retrieve film data and its associated actors from the DB.
+
+    Args:
+        film_id (int): The primary key of the film to retrieve.
+
+    Returns:
+        dict: A dictionary containing film details and a list of actors with their IDs and names.
+    """
     from .models import Film, Actor
     film = get_object_or_404(
         Film.objects.prefetch_related(
@@ -129,7 +138,16 @@ def fetch_film_data(film_id):
     }
 
 
-def fetch_actor_data(actor_id):    
+def fetch_actor_data(actor_id):
+    """
+    Retrieve actor data and the films they participated in from the DB.
+
+    Args:
+        actor_id (int): The primary key of the actor to retrieve.
+
+    Returns:
+        dict: A dictionary containing actor details and a list of films with their IDs and titles.
+    """
     from .models import Film, Actor
     actor = get_object_or_404(
         Actor.objects.prefetch_related(
