@@ -10,12 +10,9 @@ from .utils import (
     fetch_film_data,
     fetch_actor_data,
 )
+from movie_search.constant import API_LIMIT
 
 logger = logging.getLogger('movies.views')
-
-SEARCH_PAGINATION_SIZE = 25
-API_LIMIT = 50
-FIRST_PAGE = 1
 
 
 def search_view(request):

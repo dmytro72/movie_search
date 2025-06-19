@@ -5,12 +5,13 @@ from django.core.cache import cache
 from django.core.paginator import Paginator, PageNotAnInteger, EmptyPage
 from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
+from movie_search.constant import (
+    CACHE_TIMEOUT,
+    SEARCH_PAGINATION_SIZE,
+    FIRST_PAGE
+)
 
 logger = logging.getLogger('movies.utils')
-
-CACHE_TIMEOUT = 60 * 60 * 24 # 24 hours
-SEARCH_PAGINATION_SIZE = 25
-FIRST_PAGE = 1
 
 # Allow only Latin letters, digits, and spaces
 _safe_re = re.compile(r"[^a-z0-9 ]")

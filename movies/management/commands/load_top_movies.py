@@ -8,25 +8,23 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 from movies.utils import normalize
 from movies.models import Actor, Film, FilmActor
+from movie_search.constant import (
+    DEFAULT_MOVIE_LIMIT,
+    MOVIES_PER_CSFD_PAGE,
+    MIN_REQUEST_DELAY,
+    MAX_REQUEST_DELAY,
+    CSFD_BASE_URL,
+    CSFD_TOP_MOVIES_URL,
+    MOVIE_SELECTOR,
+    ACTOR_URL_PATTERN,
+    CAST_HEADER_PATTERN,
+    USER_AGENT,
+    ACCEPT_LANGUAGE,
+)
 
 
 class Command(BaseCommand):
     help = "Loads the Top 300 movies from csfd.cz along with their actors."
-
-    DEFAULT_MOVIE_LIMIT = 300
-    MOVIES_PER_CSFD_PAGE = 100
-    MIN_REQUEST_DELAY = 1  # in seconds
-    MAX_REQUEST_DELAY = 3  # in seconds
-    
-    CSFD_BASE_URL = "https://www.csfd.cz"
-    CSFD_TOP_MOVIES_URL = "https://www.csfd.cz/zebricky/filmy/nejlepsi/"
-    
-    MOVIE_SELECTOR = "header.article-header h3.film-title-norating a.film-title-name"
-    ACTOR_URL_PATTERN = r'/tvurce/\d+'
-    CAST_HEADER_PATTERN = r'Hrají:'
-    
-    USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
-    ACCEPT_LANGUAGE = "cs,en;q=0.9"
 
     def add_arguments(self, parser):
         """
@@ -48,8 +46,8 @@ class Command(BaseCommand):
         parser.add_argument(
             "--limit",
             type=positive_int,
-            default=self.DEFAULT_MOVIE_LIMIT,
-            help=f"Number of movies to load (default: {self.DEFAULT_MOVIE_LIMIT})",
+            default=DEFAULT_MOVIE_LIMIT,
+            help=f"Number of movies to load (default: {DEFAULT_MOVIE_LIMIT})",
         )
 
     def handle(self, *args, **options) -> None:
@@ -87,7 +85,7 @@ class Command(BaseCommand):
                 )
             
             # pause between requests
-            time.sleep(random.uniform(self.MIN_REQUEST_DELAY, self.MAX_REQUEST_DELAY))
+            time.sleep(random.uniform(MIN_REQUEST_DELAY, MAX_REQUEST_DELAY))
     
     def get_session(self) -> requests.Session:
         """
@@ -99,8 +97,8 @@ class Command(BaseCommand):
         session = requests.Session()
         session.headers.update(
             {
-                "User-Agent": self.USER_AGENT,
-                "Accept-Language": self.ACCEPT_LANGUAGE
+                "User-Agent": USER_AGENT,
+                "Accept-Language": ACCEPT_LANGUAGE
             }
         )
         return session
@@ -149,9 +147,9 @@ class Command(BaseCommand):
         while processed < limit:
             # Construct the URL with the 'from' parameter for pagination
             if from_param > 0:
-                url = f"{self.CSFD_TOP_MOVIES_URL}?from={from_param}"
+                url = f"{CSFD_TOP_MOVIES_URL}?from={from_param}"
             else:
-                url = self.CSFD_TOP_MOVIES_URL
+                url = CSFD_TOP_MOVIES_URL
                 
             self.stdout.write(f"Fetching movies from: {url}")
             
@@ -165,7 +163,7 @@ class Command(BaseCommand):
             soup = BeautifulSoup(response.content, "html.parser")
             
             # Find movies based on the HTML structure
-            movie_elements = soup.select(self.MOVIE_SELECTOR)
+            movie_elements = soup.select(MOVIE_SELECTOR)
             
             if not movie_elements:
                 self.stdout.write(self.style.WARNING(f"No movies found on page: {url}"))
@@ -179,12 +177,12 @@ class Command(BaseCommand):
                 href = element.get("href")
                 
                 if title and href:
-                    url = self.CSFD_BASE_URL + href
+                    url = CSFD_BASE_URL + href
                     films.append({"title": title, "url": url})
                     processed += 1
             
             # Move to the next page
-            from_param += self.MOVIES_PER_CSFD_PAGE
+            from_param += MOVIES_PER_CSFD_PAGE
                 
         return films[:limit]
     
@@ -220,7 +218,7 @@ class Command(BaseCommand):
         actors = []
 
         # Find the section with the header "Hrají:" (meaning "Starring:")
-        cast_section = soup.find('h4', string=re.compile(self.CAST_HEADER_PATTERN, re.IGNORECASE))
+        cast_section = soup.find('h4', string=re.compile(CAST_HEADER_PATTERN, re.IGNORECASE))
 
         if not cast_section:
             return actors
@@ -233,7 +231,7 @@ class Command(BaseCommand):
 
         # Find all actor links within this div
         # Includes both visible and hidden actors (e.g., in spans with class "more-member-1 hidden")
-        actor_links = cast_div.find_all('a', href=re.compile(self.ACTOR_URL_PATTERN))
+        actor_links = cast_div.find_all('a', href=re.compile(ACTOR_URL_PATTERN))
 
         for link in actor_links:
             # Extract actor URL and name
@@ -244,7 +242,7 @@ class Command(BaseCommand):
             if actor_url and actor_name:
                 # Construct full URL if relative
                 if actor_url.startswith('/'):
-                    actor_url = self.CSFD_BASE_URL + actor_url
+                    actor_url = CSFD_BASE_URL + actor_url
 
                 actors.append({
                     'name': actor_name,
