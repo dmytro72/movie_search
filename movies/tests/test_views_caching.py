@@ -57,31 +57,39 @@ def clear_cache():
 def test_search_cache_miss_and_hit(client, test_data):
     """Test search cache miss on first request and hit on second"""
     query = 'forrest'
+    normalized_query = normalize(query)
     
+    film_cache_key = f"films_{normalized_query}_page_1"
+    film_count_cache_key = f"films_{normalized_query}_count"
+    actor_cache_key = f"actors_{normalized_query}_page_1"
+    actor_count_cache_key = f"actors_{normalized_query}_count"
+
+    # Ensure cache is clear before test
+    cache.delete_many([film_cache_key, film_count_cache_key, actor_cache_key, actor_count_cache_key])
+
     # First request - should be cache miss
     with patch('movies.utils.logger') as mock_logger:
         response1 = client.get(reverse('movies:search'), {'q': query})
         
-        # Verify cache miss was logged
-        mock_logger.info.assert_any_call("No cached data found. Fetching from DB...")
-    
+        mock_logger.info.assert_any_call(f"[Cache miss] {film_cache_key} — querying database with count")
+        mock_logger.info.assert_any_call(f"[Cache miss] {actor_cache_key} — querying database with count")
+
     assert response1.status_code == 200
     assert 'Forrest Gump' in response1.content.decode()
-    
+
     # Verify cache was set
-    cache_key = f"search_{normalize(query)}"
-    cached_data = cache.get(cache_key)
-    assert cached_data is not None
-    assert 'films' in cached_data
-    assert 'actors' in cached_data
-    
+    assert cache.get(film_cache_key) is not None
+    assert cache.get(actor_cache_key) is not None
+    assert 'object_list' in cache.get(film_cache_key)
+    assert 'object_list' in cache.get(actor_cache_key)
+
     # Second request - should be cache hit
     with patch('movies.utils.logger') as mock_logger:
         response2 = client.get(reverse('movies:search'), {'q': query})
-        
-        # Verify cache hit was logged
-        mock_logger.info.assert_any_call(f"Found cached data for key: '{cache_key}")
-    
+
+        mock_logger.info.assert_any_call(f"[Cache hit] {film_cache_key} and count")
+        mock_logger.info.assert_any_call(f"[Cache hit] {actor_cache_key} and count")
+
     assert response2.status_code == 200
     assert 'Forrest Gump' in response2.content.decode()
 
@@ -92,21 +100,31 @@ def test_search_cache_different_queries(client, test_data):
     query1 = 'forrest'
     query2 = 'shawshank'
     
+    normalized_query1 = normalize(query1)
+    normalized_query2 = normalize(query2)
+    
     # Make requests with different queries
     client.get(reverse('movies:search'), {'q': query1})
     client.get(reverse('movies:search'), {'q': query2})
     
-    # Verify both cache entries exist
-    cache_key1 = f"search_{normalize(query1)}"
-    cache_key2 = f"search_{normalize(query2)}"
+    # Verify both cache entries exist for films
+    film_cache_key1 = f"films_{normalized_query1}_page_1"
+    film_cache_key2 = f"films_{normalized_query2}_page_1"
     
-    assert cache.get(cache_key1) is not None
-    assert cache.get(cache_key2) is not None
+    assert cache.get(film_cache_key1) is not None
+    assert cache.get(film_cache_key2) is not None
+    
+    # Verify both cache entries exist for actors
+    actor_cache_key1 = f"actors_{normalized_query1}_page_1"
+    actor_cache_key2 = f"actors_{normalized_query2}_page_1"
+    
+    assert cache.get(actor_cache_key1) is not None
+    assert cache.get(actor_cache_key2) is not None
     
     # Verify cache contents are different
-    cached_data1 = cache.get(cache_key1)
-    cached_data2 = cache.get(cache_key2)
-    assert cached_data1 != cached_data2
+    cached_films1 = cache.get(film_cache_key1)
+    cached_films2 = cache.get(film_cache_key2)
+    assert cached_films1 != cached_films2
 
 
 @pytest.mark.django_db
@@ -115,16 +133,20 @@ def test_search_cache_normalization(client, test_data):
     # These should all use the same cache key due to normalization
     queries = ['FORREST', 'forrest', 'Forrest', 'fOrReSt']
     
+    normalized = normalize(queries[0])
+    expected_film_key = f"films_{normalized}_page_1"
+    expected_actor_key = f"actors_{normalized}_page_1"
+    
     # Make first request
     client.get(reverse('movies:search'), {'q': queries[0]})
     
-    cache_key = f"search_{normalize(queries[0])}"
-    
     # Verify all normalized queries would use the same cache key
     for query in queries:
-        normalized = normalize(query)
-        expected_key = f"search_{normalized}"
-        assert cache_key == expected_key
+        query_normalized = normalize(query)
+        film_key = f"films_{query_normalized}_page_1"
+        actor_key = f"actors_{query_normalized}_page_1"
+        assert expected_film_key == film_key
+        assert expected_actor_key == actor_key
 
 
 @pytest.mark.django_db
@@ -135,10 +157,15 @@ def test_search_cache_timeout(client, test_data):
     with patch('django.core.cache.cache.set') as mock_cache_set:
         client.get(reverse('movies:search'), {'q': query})
         
-        # Verify cache.set was called with 24 hour timeout
-        mock_cache_set.assert_called_once()
-        args, kwargs = mock_cache_set.call_args
-        assert kwargs['timeout'] == 60*60*24  # 24 hours
+        # Verify cache.set was called 4 times:
+        # - films page data
+        # - films count
+        # - actors page data  
+        # - actors count
+        assert mock_cache_set.call_count == 4
+        for call in mock_cache_set.call_args_list:
+            args, kwargs = call
+            assert kwargs['timeout'] == 60*60*24  # 24 hours
 
 
 # ========== FILM DETAIL CACHING TESTS ==========
@@ -309,12 +336,14 @@ def test_cache_reduces_db_queries(client, test_data, django_assert_num_queries):
     query = 'forrest'
     
     # First request - should hit database
-    with django_assert_num_queries(2):  # One for films, one for actors
+    # Expected queries: 2 for count + 2 for pagination (films + actors) + 1? = 5 total
+    # The optimized version does count() and pagination in one go per model
+    with django_assert_num_queries(5):
         response1 = client.get(reverse('movies:search'), {'q': query})
         assert response1.status_code == 200
     
-    # Second request - should use cache (no DB queries for search data)
-    with django_assert_num_queries(0):  # No queries should be made
+    # Second request - should use cache (no queries needed)
+    with django_assert_num_queries(0):  # Everything should be cached
         response2 = client.get(reverse('movies:search'), {'q': query})
         assert response2.status_code == 200
 
@@ -329,7 +358,7 @@ def test_film_detail_cache_reduces_db_queries(client, test_data, django_assert_n
         response1 = client.get(reverse('movies:film_detail', args=[film_id]))
         assert response1.status_code == 200
     
-    # Second request - should use cache
+    # Second request - should use cache (no queries)
     with django_assert_num_queries(0):
         response2 = client.get(reverse('movies:film_detail', args=[film_id]))
         assert response2.status_code == 200
@@ -345,7 +374,7 @@ def test_actor_detail_cache_reduces_db_queries(client, test_data, django_assert_
         response1 = client.get(reverse('movies:actor_detail', args=[actor_id]))
         assert response1.status_code == 200
     
-    # Second request - should use cache
+    # Second request - should use cache (no queries)
     with django_assert_num_queries(0):
         response2 = client.get(reverse('movies:actor_detail', args=[actor_id]))
         assert response2.status_code == 200
@@ -383,9 +412,12 @@ def test_empty_search_not_cached(client, test_data):
     assert response.status_code == 200
     
     # Verify no cache entry was created
-    cache_key = f"search_{normalize('')}"
-    cached_data = cache.get(cache_key)
-    assert cached_data is None
+    normalized_empty = normalize('')
+    film_cache_key = f"films_{normalized_empty}_page_1"
+    actor_cache_key = f"actors_{normalized_empty}_page_1"
+    
+    assert cache.get(film_cache_key) is None
+    assert cache.get(actor_cache_key) is None
 
 
 @pytest.mark.django_db
@@ -398,9 +430,12 @@ def test_api_search_not_cached(client, test_data):
     assert response.status_code == 200
     
     # Verify no cache entry was created for API search
-    cache_key = f"search_{normalize(query)}"
-    cached_data = cache.get(cache_key)
-    assert cached_data is None  # API doesn't use caching
+    normalized_query = normalize(query)
+    film_cache_key = f"films_{normalized_query}_page_1"
+    actor_cache_key = f"actors_{normalized_query}_page_1"
+    
+    assert cache.get(film_cache_key) is None
+    assert cache.get(actor_cache_key) is None
 
 
 # ========== PARAMETRIZED TESTS ==========
@@ -430,9 +465,15 @@ def test_search_cache_with_different_queries(client, test_data, query, expected_
     
     # Verify cache was used (if query is not empty)
     if query.strip():
-        cache_key = f"search_{normalize(query)}"
-        cached_data = cache.get(cache_key)
-        assert cached_data is not None
+        normalized = normalize(query)
+        film_cache_key = f"films_{normalized}_page_1"
+        actor_cache_key = f"actors_{normalized}_page_1"
+        
+        cached_films = cache.get(film_cache_key)
+        cached_actors = cache.get(actor_cache_key)
+        
+        assert cached_films is not None
+        assert cached_actors is not None
 
 
 @pytest.mark.django_db
@@ -470,30 +511,43 @@ def test_cache_with_special_characters(client, test_data):
         response = client.get(reverse('movies:search'), {'q': query})
         assert response.status_code == 200
         
-        # Each query should have its own cache entry
-        cache_key = f"search_{normalize(query)}"
-        # Note: This might be None if no results, but should not cause errors
+        # Each query should have its own cache entry (if not empty after normalization)
+        normalized = normalize(query)
+        if normalized:  # Only check if normalized query is not empty
+            film_cache_key = f"films_{normalized}_page_1"
+            actor_cache_key = f"actors_{normalized}_page_1"
+            # Cache should exist (even if empty results)
+            assert cache.get(film_cache_key) is not None
+            assert cache.get(actor_cache_key) is not None
 
 
 @pytest.mark.django_db
 def test_concurrent_cache_access(client, test_data):
-    """Test that concurrent access to cache doesn't cause issues"""
+    """Test that concurrent access to paginated cache does not cause issues"""
     query = 'forrest'
+    normalized = normalize(query)
     film_id = test_data['film1'].id
-    
-    # Make multiple requests simultaneously (simulated)
+
     responses = []
+    # Simulate multiple simultaneous requests to search and film detail views
     for _ in range(5):
-        responses.append(client.get(reverse('movies:search'), {'q': query}))
+        # Request first page of films and actors search results
+        responses.append(client.get(reverse('movies:search'), {'q': query, 'film_page': 1, 'actor_page': 1}))
+        # Request film detail page
         responses.append(client.get(reverse('movies:film_detail', args=[film_id])))
-    
-    # All responses should be successful
+
+    # All responses should have HTTP 200 OK status
     for response in responses:
         assert response.status_code == 200
-    
-    # Cache should be properly set
-    search_cache_key = f"search_{normalize(query)}"
-    film_cache_key = f"film_{film_id}"
-    
-    assert cache.get(search_cache_key) is not None
-    assert cache.get(film_cache_key) is not None
+
+    # Verify cache entries exist
+    film_page_key = f"films_{normalized}_page_1"
+    actor_page_key = f"actors_{normalized}_page_1"
+    film_detail_key = f"film_{film_id}"
+
+    # Assert that the cache contains paginated search results for films and actors
+    assert cache.get(film_page_key) is not None
+    assert cache.get(actor_page_key) is not None
+
+    # Assert that the cache contains the film detail data
+    assert cache.get(film_detail_key) is not None

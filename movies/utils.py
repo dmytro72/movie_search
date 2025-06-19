@@ -39,56 +39,62 @@ def normalize(text: str) -> str:
     return  _space_re.sub(" ", cleaned).strip()
 
 
-def get_cached_or_fresh_results(normalized_query):
+def get_cached_or_fresh_page_with_count(normalized_query, model_class, page_number, key_prefix, field_name, display_fields):
     """
-    Retrieve search results for films and actors by a normalized query string, 
-    using cache if available, otherwise querying the database.    
+    Optimized version that caches page data and total count together to reduce DB queries.
     """
-    from .models import Film, Actor
-    cache_key = f"search_{normalized_query}"
-    cached = cache.get(cache_key)
-    if cached:
-        logger.info(f"Found cached data for key: '{cache_key}")
-        return cached['films'], cached['actors']
+    page_cache_key = f"{key_prefix}_{normalized_query}_page_{page_number}"
+    count_cache_key = f"{key_prefix}_{normalized_query}_count"
     
-    logger.info("No cached data found. Fetching from DB...")
-    films = list(Film.objects.filter(
-        title_normalized__icontains=normalized_query
-    ).order_by('title').values('id', 'title', 'url'))
+    # Try to get both from cache
+    cached_page = cache.get(page_cache_key)
+    cached_count = cache.get(count_cache_key)
+    
+    if cached_page and cached_count is not None:
+        logger.info(f"[Cache hit] {page_cache_key} and count")
+        return {
+            'page_data': cached_page,
+            'total_count': cached_count
+        }
 
-    actors = list(Actor.objects.filter(
-        name_normalized__icontains=normalized_query
-    ).order_by('name').values('id', 'name', 'url'))
+    logger.info(f"[Cache miss] {page_cache_key} — querying database with count")
 
-    cache.set(cache_key, {'films': films, 'actors': actors}, timeout=CACHE_TIMEOUT)
-    return films, actors
-
-
-def paginate_results(request, items, param_name, label):
-    """
-    Paginate a list or queryset of items based on a page number from the request.
-
-    Args:
-        request (HttpRequest): The Django HTTP request object containing GET parameters.
-        items (list or QuerySet): The collection of items to paginate.
-        param_name (str): The name of the GET parameter used to specify the page number.
-        label (str): A descriptive label for the items being paginated (used in logging).
-
-    Returns:
-        Page: A Django Paginator Page object corresponding to the requested page.
-    """
-    page_number = request.GET.get(param_name)
-    paginator = Paginator(items, SEARCH_PAGINATION_SIZE)
+    # Create base queryset
+    base_queryset = model_class.objects.filter(
+        **{f"{field_name}__icontains": normalized_query}
+    ).order_by(field_name)
+    
+    # Get count efficiently
+    total_count = base_queryset.count()
+    
+    # Get page data
+    display_queryset = base_queryset.only(*display_fields)
+    paginator = Paginator(display_queryset, SEARCH_PAGINATION_SIZE)
+    
     try:
-        page = paginator.get_page(page_number)
-        logger.debug(f"{label} page {page_number or 1} requested")
+        page = paginator.page(page_number)
     except PageNotAnInteger:
         page = paginator.page(FIRST_PAGE)
-        logger.warning(f"Invalid {label.lower()} page number: '{page_number}', using first page")
     except EmptyPage:
         page = paginator.page(paginator.num_pages)
-        logger.warning(f"{label} page '{page_number}' is empty, using last page")
-    return page
+
+    serialized = list(page.object_list.values(*display_fields))
+    page_data = {
+        'object_list': serialized,
+        'number': page.number,
+        'has_next': page.has_next(),
+        'has_previous': page.has_previous(),
+        'num_pages': paginator.num_pages,
+    }
+
+    # Cache both page and count
+    cache.set(page_cache_key, page_data, timeout=CACHE_TIMEOUT)
+    cache.set(count_cache_key, total_count, timeout=CACHE_TIMEOUT)
+    
+    return {
+        'page_data': page_data,
+        'total_count': total_count
+    }
 
 
 def get_cached_or_query_object(cache_key, logger_prefix, fetch_func):
@@ -166,3 +172,17 @@ def fetch_actor_data(actor_id):
             'title': film.title,
         } for film in actor.films_sorted]
     }
+
+
+class SimplePage:
+    def __init__(self, object_list, number, has_next, has_previous, num_pages):
+        self.object_list = object_list
+        self.number = number
+        self.has_next = has_next
+        self.has_previous = has_previous
+        self.paginator = self
+        self.num_pages = num_pages
+        self.page_range = range(1, num_pages + 1)
+
+    def __iter__(self):
+        return iter(self.object_list)

@@ -4,43 +4,57 @@ from django.http import JsonResponse
 from .models import Film, Actor
 from .utils import (
     normalize,
-    get_cached_or_fresh_results,
-    paginate_results,
+    get_cached_or_fresh_page_with_count,
+    SimplePage,
     get_cached_or_query_object,
     fetch_film_data,
     fetch_actor_data,
 )
-from movie_search.constant import API_LIMIT
+from movie_search.constant import API_LIMIT, FIRST_PAGE
 
 logger = logging.getLogger('movies.views')
 
 
 def search_view(request):
     """
-    Screen 1: Search for films and actors
+    Screen 1: Search for films and actors with per-page caching.
     """
     query = request.GET.get('q', '').strip()
 
-    films = []
-    actors = []
     films_page = None
     actors_page = None
+    films_count = 0
+    actors_count = 0
 
     if query:
         normalized_query = normalize(query)
-        films, actors = get_cached_or_fresh_results(normalized_query)
 
-        logger.info(f"Found {len(films)} films and {len(actors)} actors for query '{query}'")
+        film_page_num = request.GET.get('film_page', FIRST_PAGE)
+        actor_page_num = request.GET.get('actor_page', FIRST_PAGE)
 
-        films_page = paginate_results(request, films, 'film_page', 'Films')
-        actors_page = paginate_results(request, actors, 'actor_page', 'Actors')
+        # Get films page data with count in one go
+        films_data = get_cached_or_fresh_page_with_count(
+            normalized_query, Film, film_page_num, 'films', 'title_normalized', ['id', 'title', 'url']
+        )
+        
+        # Get actors page data with count in one go
+        actors_data = get_cached_or_fresh_page_with_count(
+            normalized_query, Actor, actor_page_num, 'actors', 'name_normalized', ['id', 'name', 'url']
+        )
+
+        films_page = SimplePage(**films_data['page_data'])
+        actors_page = SimplePage(**actors_data['page_data'])
+        films_count = films_data['total_count']
+        actors_count = actors_data['total_count']
+
+        logger.info(f"Search for '{query}': {films_count} films, {actors_count} actors")
 
     context = {
         'query': query,
         'films': films_page,
         'actors': actors_page,
-        'films_count': len(films),
-        'actors_count': len(actors),
+        'films_count': films_count,
+        'actors_count': actors_count,
     }
 
     logger.info("Search results rendered successfully")

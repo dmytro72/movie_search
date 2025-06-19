@@ -32,11 +32,11 @@
                 {% endfor %}
                 <div class="pagination">
                     {% if films.has_previous %}
-                        <a href="?q={{ query }}&film_page={{ films.previous_page_number }}&actor_page={{ actors.number }}">Předchozí</a>
+                        <a href="?q={{ query }}&film_page={{ films.number|add:-1 }}&actor_page={{ actors.number }}">Předchozí</a>
                     {% endif %}
                     <span>Stránka {{ films.number }} z {{ films.paginator.num_pages }}</span>
                     {% if films.has_next %}
-                        <a href="?q={{ query }}&film_page={{ films.next_page_number }}&actor_page={{ actors.number }}">Další</a>
+                        <a href="?q={{ query }}&film_page={{ films.number|add:1 }}&actor_page={{ actors.number }}">Další</a>
                     {% endif %}
                 </div>
             {% else %}
@@ -54,11 +54,11 @@
                 {% endfor %}
                 <div class="pagination">
                     {% if actors.has_previous %}
-                        <a href="?q={{ query }}&actor_page={{ actors.previous_page_number }}&film_page={{ films.number }}">Předchozí</a>
+                        <a href="?q={{ query }}&actor_page={{ actors.number|add:-1 }}&film_page={{ films.number }}">Předchozí</a>
                     {% endif %}
                     <span>Stránka {{ actors.number }} z {{ actors.paginator.num_pages }}</span>
                     {% if actors.has_next %}
-                        <a href="?q={{ query }}&actor_page={{ actors.next_page_number }}&film_page={{ films.number }}">Další</a>
+                        <a href="?q={{ query }}&actor_page={{ actors.number|add:1 }}&film_page={{ films.number }}">Další</a>
                     {% endif %}
                 </div>
             {% else %}
